@@ -1,0 +1,1607 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#17151a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Metronom pro Toma a kapelu</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #17151a;
+    --panel: #201e25;
+    --panel-2: #2a2731;
+    --hairline: #3a3642;
+    --paper: #ede7dd;
+    --muted: #9891a0;
+    --brass: #c99a4b;
+    --brass-dim: #8a713f;
+    --pulse: #e2572e;
+    --radius: 10px;
+  }
+
+  * { box-sizing: border-box; }
+
+  /* Native number-input spinner arrows eat into the field's width and we
+     provide our own +/- steppers anyway, so hide them everywhere. */
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  button, input, select, .bpm-number, .add-layer-btn, .play-from, .poly-row-del {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--ink);
+    color: var(--paper);
+    font-family: 'Archivo', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Faint grain gives the flat dark background some tactile depth without
+     resorting to a gradient wash — barely visible, felt more than seen. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.05;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  .app { position: relative; z-index: 1; max-width: 780px; margin: 0 auto; padding: 0 20px 80px; }
+
+  /* ---------- HERO ---------- */
+
+  .hero {
+    position: relative;
+    padding: 40px 0 32px;
+  }
+
+  .hero-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; flex-wrap: wrap; }
+
+  .title { font-family: 'Fraunces', serif; font-weight: 500; font-size: 22px; letter-spacing: 0.01em; color: var(--paper); margin: 0; }
+  .title em { font-style: italic; color: var(--brass); }
+
+  .song-title-input {
+    display: block; margin-top: 6px; background: none; border: none;
+    border-bottom: 1px solid var(--hairline); color: var(--muted);
+    font-family: 'Archivo', sans-serif; font-size: 13px; padding: 3px 0; width: 180px;
+  }
+  .song-title-input:focus-visible { outline: none; border-color: var(--brass); color: var(--paper); }
+
+  .hero-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+  .song-length { font-size: 13px; color: var(--muted); margin: 0; white-space: nowrap; }
+  .hero-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+  .mini-btn {
+    font-family: 'Archivo', sans-serif; font-size: 12px; font-weight: 600; color: var(--muted);
+    background: none; border: 1px solid var(--hairline); border-radius: 6px; padding: 8px 12px; cursor: pointer;
+    touch-action: manipulation;
+  }
+  .mini-btn:hover { color: var(--paper); border-color: var(--brass-dim); }
+  .mini-btn:disabled { opacity: 0.5; cursor: default; }
+
+  .stage { display: flex; align-items: flex-start; justify-content: center; gap: 40px; padding: 34px 0 8px; flex-wrap: wrap; }
+
+  .pendulum-wrap { width: 108px; height: 132px; flex-shrink: 0; margin-top: 2px; }
+
+  .pendulum-arm { transform-origin: 54px 120px; transition: transform 0.15s linear; }
+  .pendulum-arm.idle {
+    animation: idleSway 2.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+    transition: none;
+  }
+  @keyframes idleSway {
+    0%, 100% { transform: rotate(-9deg); }
+    50% { transform: rotate(9deg); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pendulum-arm.idle { animation: none; transform: rotate(0deg); }
+  }
+
+  .readout { text-align: left; min-width: 220px; }
+  .section-name { font-size: 14px; color: var(--brass); margin: 0 0 2px; min-height: 18px; }
+  .bpm-row { display: flex; align-items: center; gap: 14px; }
+
+  .bpm-step {
+    width: 34px; height: 34px; flex-shrink: 0; border-radius: 50%;
+    border: 1px solid var(--hairline); background: var(--panel); color: var(--paper);
+    font-family: 'Archivo', sans-serif; font-size: 18px; font-weight: 700; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; user-select: none; touch-action: manipulation;
+  }
+  .bpm-step:hover { border-color: var(--brass-dim); color: var(--brass); }
+  .bpm-step:active { background: var(--panel-2); }
+  .bpm-step:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+
+  .bpm-number {
+    font-family: 'Fraunces', serif; font-weight: 600; font-size: 68px; line-height: 1;
+    color: var(--paper); font-variant-numeric: tabular-nums;
+    cursor: ns-resize; user-select: none; touch-action: none; border-radius: 8px;
+  }
+  .bpm-number.dragging { color: var(--brass); }
+  .bpm-number:focus-visible { outline: 2px solid var(--brass); outline-offset: 6px; }
+
+  .bpm-number-input {
+    font-family: 'Fraunces', serif; font-weight: 600; font-size: 68px; line-height: 1;
+    color: var(--brass); background: none; border: none; border-bottom: 2px dashed var(--brass);
+    width: 150px; padding: 0; font-variant-numeric: tabular-nums;
+    -moz-appearance: textfield; appearance: textfield;
+  }
+  .bpm-number-input::-webkit-outer-spin-button,
+  .bpm-number-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .bpm-number-input:focus-visible { outline: none; }
+
+  .bpm-label { font-size: 14px; color: var(--muted); }
+
+  .bpm-field-row { display: flex; align-items: center; gap: 5px; }
+  .field-stepper {
+    width: 28px; height: 32px; flex-shrink: 0; border-radius: 5px;
+    border: 1px solid var(--hairline); background: var(--panel); color: var(--muted);
+    font-size: 14px; font-weight: 700; line-height: 1; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; touch-action: manipulation;
+  }
+  .field-stepper:hover { color: var(--paper); border-color: var(--brass-dim); }
+  .field-stepper:active { background: var(--panel-2); }
+  .field-stepper:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
+
+  .beat-dots { display: flex; gap: 8px; margin-top: 14px; }
+  .beat-dot { width: 11px; height: 11px; border-radius: 50%; background: var(--panel-2); border: 1px solid var(--hairline); transition: background 0.05s, transform 0.05s; }
+  .beat-dot.on { background: var(--brass); border-color: var(--brass); transform: scale(1.2); }
+  .beat-dot.downbeat.on { background: var(--pulse); border-color: var(--pulse); transform: scale(1.35); }
+
+  .poly-dots-container { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+  .poly-dot-row { display: flex; align-items: center; gap: 8px; }
+  .poly-row-label { font-size: 11px; color: var(--muted); min-width: 40px; font-variant-numeric: tabular-nums; }
+  .poly-row-dots { display: flex; gap: 6px; }
+  .poly-beat-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--panel-2); border: 1px solid var(--hairline); transition: background 0.05s, transform 0.05s; }
+  .poly-beat-dot.on { background: var(--layer-color, var(--brass)); border-color: var(--layer-color, var(--brass)); transform: scale(1.3); }
+
+  /* ---------- TRANSPORT ---------- */
+
+  .transport { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 20px 0 6px; flex-wrap: wrap; }
+
+  .btn {
+    font-family: 'Archivo', sans-serif; font-size: 14px; font-weight: 600;
+    border: 1px solid var(--hairline); background: var(--panel); color: var(--paper);
+    padding: 11px 20px; border-radius: var(--radius); cursor: pointer; transition: border-color 0.15s, background 0.15s;
+  }
+  .btn:hover { border-color: var(--brass-dim); }
+  .btn:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+
+  .btn-play { background: var(--brass); border-color: var(--brass); color: #201a0d; padding: 11px 30px; min-width: 112px; }
+  .btn-play:hover { background: #d8ab5f; border-color: #d8ab5f; }
+  .btn-play.playing { background: var(--pulse); border-color: var(--pulse); color: #2a0e05; }
+  .btn-play.playing:hover { background: #eb6a41; border-color: #eb6a41; }
+
+  .toggle { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); cursor: pointer; user-select: none; }
+  .toggle input { accent-color: var(--brass); width: 15px; height: 15px; cursor: pointer; }
+
+  .sound-select {
+    font-family: 'Archivo', sans-serif; background: var(--panel); border: 1px solid var(--hairline);
+    color: var(--paper); border-radius: 6px; padding: 6px 8px; font-size: 13px; cursor: pointer;
+  }
+  .sound-select:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
+
+  /* ---------- SECTION LIST ---------- */
+
+  .list-head { display: flex; justify-content: space-between; align-items: center; margin: 40px 0 14px; }
+  .list-head h2 { font-family: 'Fraunces', serif; font-weight: 500; font-size: 19px; margin: 0; }
+
+  .add-btn {
+    font-family: 'Archivo', sans-serif; font-size: 13px; font-weight: 600; color: var(--brass);
+    background: none; border: 1px solid var(--brass-dim); border-radius: var(--radius); padding: 8px 14px; cursor: pointer;
+  }
+  .add-btn:hover { background: rgba(201,154,75,0.1); }
+
+  .sections { display: flex; flex-direction: column; }
+
+  .section-card {
+    display: grid; grid-template-columns: 34px 1fr auto; gap: 14px; align-items: start;
+    padding: 16px 0; border-top: 1px solid var(--hairline); transition: background 0.2s;
+  }
+  .sections .section-card:last-child { border-bottom: 1px solid var(--hairline); }
+  .section-card:hover:not(.active) { background: rgba(237, 231, 221, 0.02); }
+  .section-card.active { background: linear-gradient(to right, rgba(226,87,46,0.08), transparent 60%); }
+
+  .section-index { font-family: 'Fraunces', serif; font-size: 20px; color: var(--muted); padding-top: 6px; }
+  .section-card.active .section-index { color: var(--pulse); }
+
+  .section-fields { display: flex; flex-wrap: wrap; gap: 10px 16px; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 11px; color: var(--muted); }
+
+  .field input[type="text"], .field input[type="number"] {
+    font-family: 'Archivo', sans-serif; background: var(--panel); border: 1px solid var(--hairline);
+    color: var(--paper); border-radius: 6px; padding: 7px 9px; font-size: 14px;
+  }
+  .field input:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
+
+  .field-name input { width: 150px; }
+  .field-bpm input { width: 56px; text-align: center; }
+  .field-beats input { width: 52px; }
+  .field-measures input { width: 60px; }
+
+  .tap-btn {
+    align-self: flex-end; font-size: 12px; color: var(--brass); background: none;
+    border: 1px solid var(--hairline); border-radius: 6px; padding: 7px 10px; cursor: pointer;
+  }
+  .tap-btn:hover { border-color: var(--brass-dim); }
+
+  .section-actions { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+  .icon-row { display: flex; gap: 6px; }
+
+  .icon-btn {
+    width: 34px; height: 34px; border-radius: 6px; border: 1px solid var(--hairline);
+    background: var(--panel); color: var(--muted); cursor: pointer; font-size: 14px;
+    line-height: 1; display: flex; align-items: center; justify-content: center; touch-action: manipulation;
+  }
+  .icon-btn:hover { color: var(--paper); border-color: var(--brass-dim); }
+  .icon-btn:disabled { opacity: 0.3; cursor: default; }
+  .icon-btn:disabled:hover { color: var(--muted); border-color: var(--hairline); }
+
+  .play-from {
+    font-size: 12px; color: var(--muted); background: none; border: none; cursor: pointer; padding: 2px 0;
+    text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 2px;
+  }
+  .play-from:hover { color: var(--brass); text-decoration-color: var(--brass); }
+
+  .poly-layers {
+    grid-column: 2 / span 2; display: flex; flex-direction: column; gap: 8px;
+    margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--hairline);
+  }
+  .poly-layer-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+  .layer-swatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+  .poly-layer-row input[type="number"] {
+    width: 48px; font-family: 'Archivo', sans-serif; background: var(--panel);
+    border: 1px solid var(--hairline); color: var(--paper); border-radius: 6px; padding: 5px 7px; font-size: 13px;
+  }
+  .poly-layer-row input[type="text"] {
+    width: 100px; font-family: 'Archivo', sans-serif; background: var(--panel);
+    border: 1px solid var(--hairline); color: var(--paper); border-radius: 6px; padding: 5px 7px; font-size: 13px;
+  }
+  .poly-layer-row .layer-sound-select {
+    width: 116px; font-family: 'Archivo', sans-serif; background: var(--panel);
+    border: 1px solid var(--hairline); color: var(--paper); border-radius: 6px; padding: 5px 6px; font-size: 12px; cursor: pointer;
+  }
+  .poly-layer-row .layer-pattern-select {
+    width: 148px; font-family: 'Archivo', sans-serif; background: var(--panel);
+    border: 1px solid var(--hairline); color: var(--paper); border-radius: 6px; padding: 5px 6px; font-size: 12px; cursor: pointer;
+  }
+  .poly-layer-row .ratio-text { color: var(--muted); font-size: 12px; }
+
+  .add-layer-btn {
+    align-self: flex-start; font-size: 12px; color: var(--muted); background: none;
+    border: 1px dashed var(--hairline); border-radius: 6px; padding: 6px 10px; cursor: pointer;
+  }
+  .add-layer-btn:hover { color: var(--brass); border-color: var(--brass-dim); }
+
+  #addLayerMain { display: inline-block; margin-top: 12px; }
+
+  .poly-row-del {
+    position: relative;
+    margin-left: auto; width: 18px; height: 18px; flex-shrink: 0; border-radius: 50%;
+    border: none; background: none; color: var(--muted); font-size: 13px; line-height: 1;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+  }
+  /* Invisible expanded hit area — the dot stays small and unobtrusive next to
+     the beat dots, but the actual tappable zone is closer to 44px. */
+  .poly-row-del::before { content: ""; position: absolute; inset: -13px; }
+  .poly-row-del:hover { color: var(--pulse); }
+
+  .empty { padding: 30px 0; color: var(--muted); font-size: 14px; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
+
+  @media (max-width: 480px) {
+    .bpm-number { font-size: 52px; }
+    .bpm-number-input { font-size: 52px; width: 115px; }
+    .section-fields { gap: 10px 12px; }
+    .field-name input { width: 120px; }
+    .hero-meta { align-items: flex-start; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <div class="hero">
+    <div class="hero-top">
+      <div>
+        <p class="title">Metronom pro Toma a kapelu</p>
+        <input type="text" id="songTitle" class="song-title-input" value="Moje skladba" placeholder="Název skladby" aria-label="Název skladby">
+      </div>
+      <div class="hero-meta">
+        <p class="song-length" id="songLength">0:00 celkem</p>
+        <div class="hero-actions">
+          <button class="mini-btn" id="exportJsonBtn">Exportovat skladbu</button>
+          <button class="mini-btn" id="exportWavBtn">Exportovat zvukovou stopu</button>
+          <button class="mini-btn" id="importBtn">Importovat</button>
+        </div>
+      </div>
+    </div>
+    <input type="file" id="importFile" accept="application/json" style="display:none">
+    <audio id="keepAliveAudio" loop playsinline preload="auto" style="display:none"></audio>
+
+    <div class="stage">
+      <div class="pendulum-wrap">
+        <svg viewBox="0 0 108 132" width="108" height="132" aria-hidden="true">
+          <path d="M 18 124 L 90 124 L 60 20 L 48 20 Z" fill="#211f27" stroke="#3a3642" stroke-width="1.5"/>
+          <g class="pendulum-arm idle" id="pendulumArm">
+            <line x1="54" y1="120" x2="54" y2="28" stroke="#c99a4b" stroke-width="3" stroke-linecap="round"/>
+            <circle cx="54" cy="28" r="7" fill="#e2572e"/>
+          </g>
+          <circle cx="54" cy="120" r="4" fill="#17151a" stroke="#c99a4b" stroke-width="1.5"/>
+        </svg>
+      </div>
+
+      <div class="readout">
+        <p class="section-name" id="sectionName">Připraveno</p>
+        <div class="bpm-row">
+          <button class="bpm-step" id="bpmDown" aria-label="Snížit tempo">&minus;</button>
+          <span
+            class="bpm-number" id="bpmNumber" tabindex="0" role="slider"
+            aria-valuemin="20" aria-valuemax="300" aria-valuenow="100"
+            aria-label="Tempo. Kliknutím zadáte číslo, přetažením nahoru či dolů, kolečkem myši nebo šipkami ho upravíte."
+            title="Kliknutím zadejte číslo, táhněte nahoru/dolů, kolečkem myši nebo šipkami"
+          >100</span>
+          <input
+            type="number" id="bpmNumberInput" class="bpm-number-input" min="20" max="300"
+            style="display:none" aria-label="Zadejte tempo v úderech za minutu"
+          >
+          <button class="bpm-step" id="bpmUp" aria-label="Zvýšit tempo">+</button>
+          <span class="bpm-label">bpm</span>
+        </div>
+        <div class="beat-dots" id="beatDots"></div>
+        <div class="poly-dots-container" id="polyDotsContainer"></div>
+        <button class="add-layer-btn" id="addLayerMain" type="button">+ Přidat polyrytmickou vrstvu</button>
+      </div>
+    </div>
+
+    <div class="transport">
+      <button class="btn" id="stopBtn" title="Zastavit">Zastavit</button>
+      <button class="btn btn-play" id="playBtn">Přehrát</button>
+      <button class="mini-btn" id="tapTempoMain" type="button">Tempo klepáním</button>
+      <label class="toggle"><input type="checkbox" id="loopSection"> Opakovat aktuální část</label>
+      <label class="toggle"><input type="checkbox" id="loopSong" checked> Opakovat celou skladbu</label>
+      <label class="toggle">
+        Zvuk
+        <select id="mainSound" class="sound-select" aria-label="Hlavní zvuk kliknutí"></select>
+      </label>
+    </div>
+  </div>
+
+  <div class="list-head">
+    <h2>Sekce</h2>
+    <button class="add-btn" id="addBtn">Přidat sekci</button>
+  </div>
+
+  <div class="sections" id="sectionsList"></div>
+
+</div>
+
+<script>
+(function () {
+  // ---------------------------------------------------------------
+  // Sound kits
+  // ---------------------------------------------------------------
+  const LAYER_COLORS = ['#5fb0a3', '#9b7fd4', '#e0a23c', '#6f9ce0', '#d46f9c', '#8fbf5f'];
+  const LAYER_FREQS  = [620, 520, 760, 460, 860, 400];
+
+  const SOUND_KITS = {
+    click:  { label: 'Klik',        kind: 'tonal', waveform: 'sine',   mainFreq: [950, 1400] },
+    beep:   { label: 'Pípnutí',     kind: 'tonal', waveform: 'square', mainFreq: [620, 900]  },
+    wood:   { label: 'Dřevěný blok', kind: 'noise', filterType: 'bandpass',  freq: 1400, q: 5,   decay: 0.05  },
+    rim:    { label: 'Rimshot',     kind: 'noise', filterType: 'bandpass',  freq: 2600, q: 6,   decay: 0.035 },
+    hihat:  { label: 'Hi-hat',      kind: 'noise', filterType: 'highpass',  freq: 6000, q: 0.7, decay: 0.09  },
+  };
+  const SOUND_KIT_IDS = Object.keys(SOUND_KITS);
+
+  function soundOptionsHtml(selected) {
+    return SOUND_KIT_IDS.map(id =>
+      `<option value="${id}" ${id === selected ? 'selected' : ''}>${SOUND_KITS[id].label}</option>`
+    ).join('');
+  }
+
+  // Common polyrhythm "kinds" against the section's main pulse — picking one
+  // is just a shortcut that sets the layer's hit count; the hit-count number
+  // field still works for anything outside this common set.
+  const PATTERN_PRESETS = [2, 3, 4, 5, 6, 7];
+  const PATTERN_NAMES = { 3: 'triola', 5: 'kvintola', 7: 'septola' };
+
+  function patternOptionsHtml(beats, hits) {
+    const isPreset = PATTERN_PRESETS.includes(hits);
+    const presetOptions = PATTERN_PRESETS.map(n => {
+      const name = PATTERN_NAMES[n] ? ` — ${PATTERN_NAMES[n]}` : '';
+      return `<option value="${n}" ${hits === n ? 'selected' : ''}>${n} proti ${beats}${name}</option>`;
+    }).join('');
+    return presetOptions + `<option value="custom" ${!isPreset ? 'selected' : ''}>Vlastní…</option>`;
+  }
+
+  // ---------------------------------------------------------------
+  // State
+  // ---------------------------------------------------------------
+  let sections = [
+    { id: 1, name: 'Sekce 1', bpm: 100, beats: 4, measures: 4, polyLayers: [] }
+  ];
+  let nextId = 2;
+  let nextLayerId = 1;
+  let startSectionIdx = 0;
+
+  // Remembers each named section's settings (tempo, time signature, bar
+  // count, polyrhythm layers) within this song, keyed by lowercased name.
+  // Naming a new section "Chorus" — when a "Chorus" has been set up before —
+  // reapplies those settings automatically instead of starting from scratch.
+  let sectionTemplates = {};
+
+  const playback = {
+    isPlaying: false,
+    audioCtx: null,
+    masterGain: null,
+    lookaheadMs: 25,
+    scheduleAheadTime: 0.12,
+    nextBarTime: 0,
+    timerId: null,
+    rafId: null,
+    cur: { sectionIdx: 0, measureInSection: 0 },
+    queue: [],
+    displayed: null,
+  };
+
+  let lastLayoutSignature = null;
+  let lastActiveSectionIdx = -1;
+  let pendulumDir = 1;
+  const noiseBufferCache = new WeakMap();
+
+  const els = {
+    sectionsList: document.getElementById('sectionsList'),
+    addBtn: document.getElementById('addBtn'),
+    playBtn: document.getElementById('playBtn'),
+    stopBtn: document.getElementById('stopBtn'),
+    loopSection: document.getElementById('loopSection'),
+    loopSong: document.getElementById('loopSong'),
+    mainSound: document.getElementById('mainSound'),
+    sectionName: document.getElementById('sectionName'),
+    bpmNumber: document.getElementById('bpmNumber'),
+    bpmNumberInput: document.getElementById('bpmNumberInput'),
+    bpmUp: document.getElementById('bpmUp'),
+    bpmDown: document.getElementById('bpmDown'),
+    beatDots: document.getElementById('beatDots'),
+    polyDotsContainer: document.getElementById('polyDotsContainer'),
+    addLayerMain: document.getElementById('addLayerMain'),
+    tapTempoMain: document.getElementById('tapTempoMain'),
+    pendulumArm: document.getElementById('pendulumArm'),
+    songLength: document.getElementById('songLength'),
+    songTitle: document.getElementById('songTitle'),
+    exportJsonBtn: document.getElementById('exportJsonBtn'),
+    exportWavBtn: document.getElementById('exportWavBtn'),
+    importBtn: document.getElementById('importBtn'),
+    importFile: document.getElementById('importFile'),
+    keepAliveAudio: document.getElementById('keepAliveAudio'),
+  };
+
+  function clamp(v, lo, hi) {
+    if (Number.isNaN(v)) return lo;
+    return Math.min(hi, Math.max(lo, v));
+  }
+
+  function escapeHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+  }
+
+  function layerColor(idx) { return LAYER_COLORS[idx % LAYER_COLORS.length]; }
+  function layerFreq(idx) { return LAYER_FREQS[idx % LAYER_FREQS.length]; }
+
+  // Click = one step. Keep the pointer held down and it repeats, speeding up
+  // after ~1.1s so you can sweep across the full tempo range quickly.
+  function attachHoldRepeat(el, onStep) {
+    let repeatTimeout = null;
+    let repeatInterval = null;
+    let holdStart = 0;
+
+    function tick() {
+      const fast = performance.now() - holdStart > 1100;
+      onStep(fast ? 5 : 1);
+    }
+    function start(e) {
+      e.preventDefault();
+      holdStart = performance.now();
+      tick();
+      repeatTimeout = setTimeout(() => { repeatInterval = setInterval(tick, 90); }, 380);
+    }
+    function stop() {
+      clearTimeout(repeatTimeout);
+      clearInterval(repeatInterval);
+      repeatTimeout = null;
+      repeatInterval = null;
+    }
+    el.addEventListener('pointerdown', start);
+    el.addEventListener('pointerup', stop);
+    el.addEventListener('pointerleave', stop);
+    el.addEventListener('pointercancel', stop);
+  }
+
+  // ---------------------------------------------------------------
+  // Rendering the section list
+  // ---------------------------------------------------------------
+  function renderSections() {
+    els.sectionsList.innerHTML = '';
+
+    if (sections.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = 'Zatím žádné sekce — přidejte první a začněte tvořit skladbu.';
+      els.sectionsList.appendChild(empty);
+      updateSongLength();
+      return;
+    }
+
+    const locked = playback.isPlaying; // structural edits are disabled while playing to avoid desync
+
+    sections.forEach((sec, idx) => {
+      const card = document.createElement('div');
+      card.className = 'section-card';
+      card.dataset.sectionCard = sec.id;
+      if (playback.isPlaying && playback.displayed && playback.displayed.sectionIdx === idx) {
+        card.classList.add('active');
+      }
+
+      const layerRows = sec.polyLayers.map((layer, lidx) => {
+        const color = layerColor(lidx);
+        return `
+          <div class="poly-layer-row">
+            <span class="layer-swatch" style="background:${color}"></span>
+            <select class="layer-pattern-select" data-layer-field="pattern" data-section-id="${sec.id}" data-layer-id="${layer.id}" aria-label="Polyrytmický vzor">
+              ${patternOptionsHtml(sec.beats, layer.hits)}
+            </select>
+            <input type="number" min="1" max="16" value="${layer.hits}" data-layer-field="hits" data-section-id="${sec.id}" data-layer-id="${layer.id}" aria-label="Počet úderů na takt">
+            <span class="ratio-text">proti ${sec.beats} (${layer.hits}:${sec.beats})</span>
+            <input type="text" placeholder="popisek" value="${escapeHtml(layer.label || '')}" data-layer-field="label" data-section-id="${sec.id}" data-layer-id="${layer.id}">
+            <select class="layer-sound-select" data-layer-field="sound" data-section-id="${sec.id}" data-layer-id="${layer.id}" aria-label="Zvuk vrstvy">
+              ${soundOptionsHtml(layer.sound || 'click')}
+            </select>
+            <button class="icon-btn" data-layer-del="${layer.id}" data-section-id="${sec.id}" title="Odebrat vrstvu">&times;</button>
+          </div>
+        `;
+      }).join('');
+
+      card.innerHTML = `
+        <div class="section-index">${String(idx + 1).padStart(2, '0')}</div>
+        <div class="section-fields">
+          <div class="field field-name">
+            <label>Název</label>
+            <input type="text" value="${escapeHtml(sec.name)}" data-field="name" data-id="${sec.id}">
+          </div>
+          <div class="field field-bpm">
+            <label>Tempo</label>
+            <div class="bpm-field-row">
+              <button class="field-stepper" data-bpm-step="-1" data-id="${sec.id}" aria-label="Snížit tempo" type="button">&minus;</button>
+              <input type="number" min="20" max="300" value="${sec.bpm}" data-field="bpm" data-id="${sec.id}">
+              <button class="field-stepper" data-bpm-step="1" data-id="${sec.id}" aria-label="Zvýšit tempo" type="button">+</button>
+            </div>
+          </div>
+          <div class="field field-beats">
+            <label>Doby / takt</label>
+            <input type="number" min="1" max="12" value="${sec.beats}" data-field="beats" data-id="${sec.id}">
+          </div>
+          <div class="field field-measures">
+            <label>Takty</label>
+            <input type="number" min="1" max="200" value="${sec.measures}" data-field="measures" data-id="${sec.id}">
+          </div>
+          <button class="tap-btn" data-tap="${sec.id}">Tempo klepáním</button>
+        </div>
+        <div class="section-actions">
+          <div class="icon-row">
+            <button class="icon-btn" data-up="${sec.id}" title="${locked ? 'Pro přeuspořádání pozastavte přehrávání' : 'Posunout nahoru'}" ${idx === 0 || locked ? 'disabled' : ''}>&#8593;</button>
+            <button class="icon-btn" data-down="${sec.id}" title="${locked ? 'Pro přeuspořádání pozastavte přehrávání' : 'Posunout dolů'}" ${idx === sections.length - 1 || locked ? 'disabled' : ''}>&#8595;</button>
+            <button class="icon-btn" data-del="${sec.id}" title="${locked ? 'Pro smazání pozastavte přehrávání' : 'Smazat'}" ${locked ? 'disabled' : ''}>&times;</button>
+          </div>
+          <button class="play-from" data-play="${idx}">Přehrát odsud</button>
+        </div>
+        <div class="poly-layers">
+          ${layerRows}
+          <button class="add-layer-btn" data-add-layer="${sec.id}">+ polyrytmická vrstva</button>
+        </div>
+      `;
+      els.sectionsList.appendChild(card);
+    });
+
+    updateSongLength();
+    wireSectionEvents();
+  }
+
+  // Patches just the "against N (H:N)" text and the pattern dropdown's
+  // labels/selection for a section's layers, without rebuilding the DOM —
+  // keeps focus in place while the user is typing.
+  function updateRatioTexts(sec) {
+    const card = els.sectionsList.querySelector(`.section-card[data-section-card="${sec.id}"]`);
+    if (!card) return;
+    card.querySelectorAll('.poly-layer-row').forEach(row => {
+      const hitsInput = row.querySelector('[data-layer-field="hits"]');
+      if (!hitsInput) return;
+      const layer = sec.polyLayers.find(l => l.id === Number(hitsInput.dataset.layerId));
+      if (!layer) return;
+      const ratioEl = row.querySelector('.ratio-text');
+      if (ratioEl) ratioEl.textContent = `proti ${sec.beats} (${layer.hits}:${sec.beats})`;
+      const patternSelect = row.querySelector('.layer-pattern-select');
+      if (patternSelect) patternSelect.innerHTML = patternOptionsHtml(sec.beats, layer.hits);
+    });
+  }
+
+  function wireSectionEvents() {
+    els.sectionsList.querySelectorAll('input[data-field]').forEach(input => {
+      input.addEventListener('input', e => {
+        const id = Number(e.target.dataset.id);
+        const field = e.target.dataset.field;
+        const sec = sections.find(s => s.id === id);
+        if (!sec) return;
+        if (field === 'name') {
+          sec.name = e.target.value;
+        } else {
+          let v = Number(e.target.value);
+          if (field === 'bpm') v = clamp(v, 20, 300);
+          if (field === 'beats') v = clamp(v, 1, 12);
+          if (field === 'measures') v = clamp(v, 1, 200);
+          sec[field] = v || sec[field];
+          updateSongLength();
+          saveSectionTemplate(sec);
+        }
+        updateReadoutIfCurrent(sec);
+        if (field === 'beats') updateRatioTexts(sec);
+      });
+
+      if (input.dataset.field === 'name') {
+        input.addEventListener('focus', e => { e.target.dataset.prevValue = e.target.value; });
+        input.addEventListener('blur', e => {
+          if (e.target.value === e.target.dataset.prevValue) return; // name didn't actually change
+          const sec = sections.find(s => s.id === Number(e.target.dataset.id));
+          if (!sec) return;
+          if (applySectionTemplateIfMatch(sec)) {
+            refreshHeroLayoutFor(sec);
+            renderSections();
+          }
+        });
+      }
+    });
+
+    els.sectionsList.querySelectorAll('[data-layer-field]').forEach(input => {
+      input.addEventListener('input', e => {
+        const secId = Number(e.target.dataset.sectionId);
+        const layerId = Number(e.target.dataset.layerId);
+        const field = e.target.dataset.layerField;
+        const sec = sections.find(s => s.id === secId);
+        if (!sec) return;
+        const layer = sec.polyLayers.find(l => l.id === layerId);
+        if (!layer) return;
+
+        if (field === 'hits') {
+          layer.hits = clamp(Number(e.target.value), 1, 16) || layer.hits;
+          updateRatioTexts(sec);
+          updateReadoutIfCurrent(sec);
+        } else if (field === 'pattern') {
+          if (e.target.value !== 'custom') {
+            layer.hits = clamp(Number(e.target.value), 1, 16);
+            const row = e.target.closest('.poly-layer-row');
+            const hitsInput = row && row.querySelector('[data-layer-field="hits"]');
+            if (hitsInput) hitsInput.value = layer.hits;
+            updateRatioTexts(sec);
+            updateReadoutIfCurrent(sec);
+          }
+          // "Custom…" just hands control back to the hits number field —
+          // no state change until the user types a value there.
+        } else if (field === 'label') {
+          layer.label = e.target.value;
+          updateReadoutIfCurrent(sec);
+        } else if (field === 'sound') {
+          layer.sound = e.target.value;
+        }
+        saveSectionTemplate(sec);
+      });
+    });
+
+    els.sectionsList.querySelectorAll('[data-add-layer]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const sec = sections.find(s => s.id === Number(btn.dataset.addLayer));
+        if (!sec) return;
+        sec.polyLayers.push({ id: nextLayerId++, hits: 3, label: '', sound: 'click' });
+        saveSectionTemplate(sec);
+        updateReadoutIfCurrent(sec);
+        refreshHeroLayoutFor(sec);
+        renderSections();
+      });
+    });
+
+    els.sectionsList.querySelectorAll('[data-layer-del]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const sec = sections.find(s => s.id === Number(btn.dataset.sectionId));
+        if (!sec) return;
+        sec.polyLayers = sec.polyLayers.filter(l => l.id !== Number(btn.dataset.layerDel));
+        saveSectionTemplate(sec);
+        updateReadoutIfCurrent(sec);
+        refreshHeroLayoutFor(sec);
+        renderSections();
+      });
+    });
+
+    els.sectionsList.querySelectorAll('[data-bpm-step]').forEach(btn => {
+      const id = Number(btn.dataset.id);
+      const dir = Number(btn.dataset.bpmStep);
+      attachHoldRepeat(btn, (step) => {
+        const sec = sections.find(s => s.id === id);
+        if (!sec) return;
+        sec.bpm = clamp(sec.bpm + dir * step, 20, 300);
+        saveSectionTemplate(sec);
+        const input = btn.closest('.section-card').querySelector('[data-field="bpm"]');
+        if (input) input.value = sec.bpm;
+        updateSongLength();
+        updateReadoutIfCurrent(sec);
+      });
+    });
+
+    els.sectionsList.querySelectorAll('[data-tap]').forEach(btn => {
+      btn.addEventListener('click', () => handleTapTempo(Number(btn.dataset.tap)));
+    });
+
+    els.sectionsList.querySelectorAll('[data-del]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (playback.isPlaying) return; // safety net; button is also disabled while playing
+        sections = sections.filter(s => s.id !== Number(btn.dataset.del));
+        renderSections();
+      });
+    });
+
+    els.sectionsList.querySelectorAll('[data-up]').forEach(btn => {
+      btn.addEventListener('click', () => moveSection(Number(btn.dataset.up), -1));
+    });
+    els.sectionsList.querySelectorAll('[data-down]').forEach(btn => {
+      btn.addEventListener('click', () => moveSection(Number(btn.dataset.down), 1));
+    });
+
+    els.sectionsList.querySelectorAll('[data-play]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        startSectionIdx = Number(btn.dataset.play);
+        restartFrom(startSectionIdx);
+      });
+    });
+  }
+
+  function moveSection(id, dir) {
+    if (playback.isPlaying) return; // safety net; buttons are also disabled while playing
+    const idx = sections.findIndex(s => s.id === id);
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= sections.length) return;
+    [sections[idx], sections[newIdx]] = [sections[newIdx], sections[idx]];
+    renderSections();
+  }
+
+  function updateSongLength() {
+    let totalSeconds = 0;
+    sections.forEach(sec => { totalSeconds += (60 / sec.bpm) * sec.beats * sec.measures; });
+    const m = Math.floor(totalSeconds / 60);
+    const s = Math.round(totalSeconds % 60);
+    els.songLength.textContent = `${m}:${String(s).padStart(2, '0')} celkem`;
+  }
+
+  function setBpmDisplay(bpm) {
+    els.bpmNumber.textContent = bpm;
+    els.bpmNumber.setAttribute('aria-valuenow', bpm);
+  }
+
+  function updateReadoutIfCurrent(sec) {
+    if (!playback.isPlaying || !playback.displayed) return;
+    const activeSec = sections[playback.displayed.sectionIdx];
+    if (activeSec === sec) {
+      setBpmDisplay(sec.bpm);
+      els.sectionName.textContent = sec.name || '(untitled)';
+      lastLayoutSignature = null; // force dot-row rebuild on next scheduled note
+    }
+  }
+
+  // Which section the hero readout — and its interactive tempo control —
+  // currently represents: the section actively playing, or the one queued
+  // up to play next.
+  function getReadoutSectionIdx() {
+    if (playback.isPlaying && playback.displayed) return playback.displayed.sectionIdx;
+    if (!sections.length) return -1;
+    return clamp(startSectionIdx, 0, sections.length - 1);
+  }
+
+  // ---------------------------------------------------------------
+  // Named-section memory ("remember the Chorus")
+  // ---------------------------------------------------------------
+  function templateKey(name) { return (name || '').trim().toLowerCase(); }
+
+  function saveSectionTemplate(sec) {
+    const key = templateKey(sec.name);
+    if (!key) return;
+    sectionTemplates[key] = {
+      bpm: sec.bpm,
+      beats: sec.beats,
+      measures: sec.measures,
+      polyLayers: sec.polyLayers.map(l => ({ hits: l.hits, label: l.label, sound: l.sound || 'click' }))
+    };
+  }
+
+  // If a template exists for this section's (current) name, applies it and
+  // returns true. Used when a section is renamed to something already seen
+  // elsewhere in the song, so it doesn't have to be set up again by hand.
+  function applySectionTemplateIfMatch(sec) {
+    const key = templateKey(sec.name);
+    const tpl = key && sectionTemplates[key];
+    if (!tpl) return false;
+    sec.bpm = tpl.bpm;
+    sec.beats = tpl.beats;
+    sec.measures = tpl.measures;
+    sec.polyLayers = tpl.polyLayers.map(l => ({ id: nextLayerId++, hits: l.hits, label: l.label, sound: l.sound }));
+    return true;
+  }
+
+  // Rebuilds the template registry from whatever sections currently exist —
+  // used after import (or at startup) so memory works from what's already
+  // in the song, not just what changes from here on.
+  function refreshSectionTemplates() {
+    sectionTemplates = {};
+    sections.forEach(saveSectionTemplate);
+  }
+
+  // If `sec` is the section currently shown in the hero readout, refreshes
+  // its dot layout immediately (when stopped) or lets the next scheduled
+  // note pick up the change (when playing) — used after any edit that adds
+  // or removes a polyrhythm layer.
+  function refreshHeroLayoutFor(sec) {
+    const idx = getReadoutSectionIdx();
+    if (idx < 0 || sections[idx] !== sec) return;
+    if (playback.isPlaying) lastLayoutSignature = null;
+    else buildReadoutLayout(sec);
+  }
+
+  // Applies a new tempo to a specific section (clamped), and — if that
+  // section happens to be the one currently shown in the hero readout —
+  // keeps the big number and its accessible attributes in sync too.
+  function applyTempoToSection(sec, rawBpm) {
+    sec.bpm = clamp(Math.round(rawBpm), 20, 300);
+    saveSectionTemplate(sec);
+    const readoutIdx = getReadoutSectionIdx();
+    if (readoutIdx >= 0 && sections[readoutIdx] === sec) setBpmDisplay(sec.bpm);
+    const input = els.sectionsList.querySelector(`.section-card[data-section-card="${sec.id}"] [data-field="bpm"]`);
+    if (input && document.activeElement !== input) input.value = sec.bpm;
+    updateSongLength();
+    return sec.bpm;
+  }
+
+  function setReadoutTempo(newBpm) {
+    const idx = getReadoutSectionIdx();
+    if (idx < 0) return;
+    applyTempoToSection(sections[idx], newBpm);
+  }
+
+  function adjustReadoutTempo(step) {
+    const idx = getReadoutSectionIdx();
+    if (idx < 0) return;
+    setReadoutTempo(sections[idx].bpm + step);
+  }
+
+  // ---------------------------------------------------------------
+  // Click-to-type tempo editing (hero readout)
+  // ---------------------------------------------------------------
+  let bpmEditSectionId = null;
+  let skipBpmCommit = false;
+
+  function enterBpmEditMode() {
+    const idx = getReadoutSectionIdx();
+    if (idx < 0) return;
+    const sec = sections[idx];
+    bpmEditSectionId = sec.id;
+    els.bpmNumber.style.display = 'none';
+    els.bpmNumberInput.style.display = '';
+    els.bpmNumberInput.value = sec.bpm;
+    els.bpmNumberInput.focus();
+    els.bpmNumberInput.select();
+  }
+
+  function exitBpmEditMode() {
+    els.bpmNumberInput.style.display = 'none';
+    els.bpmNumber.style.display = '';
+    bpmEditSectionId = null;
+  }
+
+  // ---------------------------------------------------------------
+  // Tap tempo
+  // ---------------------------------------------------------------
+  let tapTimes = [];
+  let tapTimeoutHandle = null;
+  function handleTapTempo(sectionId) {
+    const now = performance.now();
+    if (tapTimes.length && now - tapTimes[tapTimes.length - 1] > 2000) tapTimes = [];
+    tapTimes.push(now);
+    if (tapTimes.length > 6) tapTimes.shift();
+
+    if (tapTimes.length >= 2) {
+      const intervals = [];
+      for (let i = 1; i < tapTimes.length; i++) intervals.push(tapTimes[i] - tapTimes[i - 1]);
+      const avgMs = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+      const bpm = clamp(Math.round(60000 / avgMs), 20, 300);
+      const sec = sections.find(s => s.id === sectionId);
+      // Deliberately not renderSections() here: that would rebuild the whole
+      // section list — including the very tap button being clicked — on
+      // every single tap, which made rapid tapping miss beats. This updates
+      // just the tempo number/display instead, like the stepper buttons do.
+      if (sec) applyTempoToSection(sec, bpm);
+    }
+    clearTimeout(tapTimeoutHandle);
+    tapTimeoutHandle = setTimeout(() => { tapTimes = []; }, 2000);
+  }
+
+  // ---------------------------------------------------------------
+  // Readout dot layout (main pulse + poly layers)
+  // ---------------------------------------------------------------
+  function layoutSignature(sec) {
+    return sec.beats + '|' + sec.polyLayers.map(l => l.hits).join(',');
+  }
+
+  function buildReadoutLayout(sec) {
+    els.beatDots.innerHTML = '';
+    for (let i = 0; i < sec.beats; i++) {
+      const dot = document.createElement('div');
+      dot.className = 'beat-dot' + (i === 0 ? ' downbeat' : '');
+      els.beatDots.appendChild(dot);
+    }
+
+    els.polyDotsContainer.innerHTML = '';
+    sec.polyLayers.forEach((layer, lidx) => {
+      const color = layerColor(lidx);
+      const row = document.createElement('div');
+      row.className = 'poly-dot-row';
+      row.style.setProperty('--layer-color', color);
+      row.dataset.layerId = layer.id;
+
+      const label = document.createElement('div');
+      label.className = 'poly-row-label';
+      label.textContent = layer.label ? layer.label : (layer.hits + ':' + sec.beats);
+      row.appendChild(label);
+
+      const dotsWrap = document.createElement('div');
+      dotsWrap.className = 'poly-row-dots';
+      for (let i = 0; i < layer.hits; i++) {
+        const d = document.createElement('div');
+        d.className = 'poly-beat-dot';
+        dotsWrap.appendChild(d);
+      }
+      row.appendChild(dotsWrap);
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'poly-row-del';
+      delBtn.type = 'button';
+      delBtn.setAttribute('aria-label', 'Odebrat tuto polyrytmickou vrstvu');
+      delBtn.textContent = '\u00d7';
+      delBtn.addEventListener('click', () => {
+        sec.polyLayers = sec.polyLayers.filter(l => l.id !== layer.id);
+        saveSectionTemplate(sec);
+        buildReadoutLayout(sec);
+        renderSections();
+      });
+      row.appendChild(delBtn);
+
+      els.polyDotsContainer.appendChild(row);
+    });
+  }
+
+  // ---------------------------------------------------------------
+  // Audio synthesis
+  // ---------------------------------------------------------------
+  function ensureAudio() {
+    if (!playback.audioCtx) {
+      playback.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      playback.masterGain = playback.audioCtx.createGain();
+      playback.masterGain.gain.value = 0.9;
+      playback.masterGain.connect(playback.audioCtx.destination);
+    }
+    if (playback.audioCtx.state === 'suspended') playback.audioCtx.resume();
+  }
+
+  // ---------------------------------------------------------------
+  // Background / lock-screen playback
+  //
+  // Mobile browsers aggressively suspend a page's JS and Web Audio graph
+  // once the screen locks or the tab is backgrounded — a plain AudioContext
+  // alone will go silent. The mitigation browsers actually respect is a real
+  // <audio> element with an active playback session (the same mechanism
+  // music/podcast sites rely on): as long as it's playing, the OS treats the
+  // page as a media session and is far less likely to suspend it, and it
+  // also unlocks the lock-screen transport controls via the Media Session
+  // API. This is a best-effort improvement, not a guarantee — see the
+  // caveats called out where this is wired up below.
+  // ---------------------------------------------------------------
+  function buildKeepAliveAudio() {
+    if (els.keepAliveAudio.src) return;
+    const sampleRate = 8000;
+    const samples = new Float32Array(sampleRate); // 1 second, looped
+    for (let i = 0; i < samples.length; i++) samples[i] = (Math.random() * 2 - 1) * 0.008; // near-inaudible, but not digital silence
+    els.keepAliveAudio.src = URL.createObjectURL(encodeWavMono(samples, sampleRate));
+  }
+
+  function startKeepAlive() {
+    buildKeepAliveAudio();
+    const p = els.keepAliveAudio.play();
+    if (p && p.catch) p.catch(() => {}); // autoplay can be rejected in edge cases; not fatal
+  }
+
+  function stopKeepAlive() {
+    els.keepAliveAudio.pause();
+  }
+
+  function setupMediaSession() {
+    if (!('mediaSession' in navigator)) return;
+    navigator.mediaSession.setActionHandler('play', () => {
+      if (!playback.isPlaying) startPlayback(playback.displayed ? playback.displayed.sectionIdx : startSectionIdx);
+    });
+    navigator.mediaSession.setActionHandler('pause', () => {
+      if (playback.isPlaying) pausePlayback();
+    });
+    navigator.mediaSession.setActionHandler('stop', () => {
+      startSectionIdx = 0;
+      stopPlayback();
+    });
+  }
+
+  function updateMediaSessionState(isPlaying) {
+    if (!('mediaSession' in navigator)) return;
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: els.songTitle.value || 'Moje skladba',
+        artist: 'Metronom pro Toma a kapelu',
+      });
+      navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+    } catch (e) { /* MediaMetadata unsupported in some older browsers — non-fatal */ }
+  }
+
+  function getNoiseBuffer(ctx) {
+    if (!noiseBufferCache.has(ctx)) {
+      const len = Math.max(1, Math.floor(ctx.sampleRate * 0.2));
+      const buffer = ctx.createBuffer(1, len, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+      noiseBufferCache.set(ctx, buffer);
+    }
+    return noiseBufferCache.get(ctx);
+  }
+
+  function synthTonal(ctx, destination, time, waveform, freq, peak, decay) {
+    const osc = ctx.createOscillator();
+    osc.type = waveform;
+    osc.frequency.value = freq;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, time);
+    gain.gain.exponentialRampToValueAtTime(peak, time + 0.002);
+    gain.gain.exponentialRampToValueAtTime(0.0001, time + decay);
+    osc.connect(gain);
+    gain.connect(destination);
+    osc.start(time);
+    osc.stop(time + decay + 0.01);
+  }
+
+  function synthNoise(ctx, destination, time, filterType, freq, q, peak, decay) {
+    const src = ctx.createBufferSource();
+    src.buffer = getNoiseBuffer(ctx);
+    const filter = ctx.createBiquadFilter();
+    filter.type = filterType;
+    filter.frequency.value = freq;
+    filter.Q.value = q;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, time);
+    gain.gain.exponentialRampToValueAtTime(peak, time + 0.002);
+    gain.gain.exponentialRampToValueAtTime(0.0001, time + decay);
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(destination);
+    src.start(time);
+    src.stop(time + decay + 0.02);
+  }
+
+  // Renders one scheduled hit using whichever sound kit is assigned to it.
+  function synthClick(ctx, destination, time, ev, soundKitId) {
+    const kit = SOUND_KITS[soundKitId] || SOUND_KITS.click;
+    if (kit.kind === 'tonal') {
+      let freq, peak;
+      if (ev.kind === 'main') {
+        freq = ev.isDownbeat ? kit.mainFreq[1] : kit.mainFreq[0];
+        peak = ev.isDownbeat ? 0.9 : 0.55;
+      } else {
+        const base = layerFreq(ev.layerIndex);
+        freq = ev.isDownbeat ? base * 1.25 : base;
+        peak = ev.isDownbeat ? 0.55 : 0.38;
+      }
+      synthTonal(ctx, destination, time, kit.waveform, freq, peak, 0.06);
+    } else {
+      const layerShift = ev.kind === 'poly' ? 1 + 0.15 * ev.layerIndex : 1;
+      const peak = ev.isDownbeat
+        ? (ev.kind === 'main' ? 0.9 : 0.6)
+        : (ev.kind === 'main' ? 0.6 : 0.4);
+      synthNoise(ctx, destination, time, kit.filterType, kit.freq * layerShift, kit.q, peak, kit.decay);
+    }
+  }
+
+  // Builds every event (main pulse + all poly layers) for one bar, schedules
+  // the audio, and optionally records it in the live visual queue.
+  function scheduleBarEvents(ctx, destination, sectionIdx, sec, barStart, barDuration, pushToQueue, mainSoundKitId) {
+    const events = [];
+    const spb = barDuration / sec.beats;
+    for (let i = 0; i < sec.beats; i++) {
+      events.push({ time: barStart + i * spb, kind: 'main', hitIndex: i, isDownbeat: i === 0, soundKit: mainSoundKitId });
+    }
+    sec.polyLayers.forEach((layer, lidx) => {
+      const step = barDuration / layer.hits;
+      const soundKit = SOUND_KITS[layer.sound] ? layer.sound : 'click';
+      for (let i = 0; i < layer.hits; i++) {
+        events.push({ time: barStart + i * step, kind: 'poly', layerId: layer.id, layerIndex: lidx, hitIndex: i, isDownbeat: i === 0, soundKit });
+      }
+    });
+    events.sort((a, b) => a.time - b.time);
+    events.forEach(ev => {
+      synthClick(ctx, destination, ev.time, ev, ev.soundKit);
+      if (pushToQueue) playback.queue.push(Object.assign({ sectionIdx }, ev));
+    });
+  }
+
+  // ---------------------------------------------------------------
+  // Bar-based lookahead scheduler
+  // ---------------------------------------------------------------
+  function scheduler() {
+    while (playback.nextBarTime < playback.audioCtx.currentTime + playback.scheduleAheadTime) {
+      if (sections.length === 0 || playback.cur.sectionIdx >= sections.length) {
+        if (playback.timerId) { clearInterval(playback.timerId); playback.timerId = null; }
+        return;
+      }
+      const idx = playback.cur.sectionIdx;
+      const sec = sections[idx];
+      const barDuration = (60 / sec.bpm) * sec.beats;
+
+      scheduleBarEvents(playback.audioCtx, playback.masterGain, idx, sec, playback.nextBarTime, barDuration, true, els.mainSound.value);
+      playback.nextBarTime += barDuration;
+
+      playback.cur.measureInSection++;
+      if (playback.cur.measureInSection >= sec.measures) {
+        playback.cur.measureInSection = 0;
+        if (!els.loopSection.checked) {
+          playback.cur.sectionIdx++;
+          if (playback.cur.sectionIdx >= sections.length) {
+            if (els.loopSong.checked) {
+              playback.cur.sectionIdx = 0;
+            } else {
+              clearInterval(playback.timerId);
+              playback.timerId = null;
+              return;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  function drawLoop() {
+    if (!playback.audioCtx) return;
+    const now = playback.audioCtx.currentTime;
+    while (playback.queue.length && playback.queue[0].time <= now) {
+      playback.displayed = playback.queue.shift();
+      renderDisplayed(playback.displayed);
+    }
+
+    if (!playback.timerId && playback.queue.length === 0 && playback.isPlaying) {
+      finishPlayback();
+      return;
+    }
+
+    if (playback.isPlaying) playback.rafId = requestAnimationFrame(drawLoop);
+  }
+
+  function renderDisplayed(note) {
+    const sec = sections[note.sectionIdx];
+    if (!sec) return;
+
+    els.sectionName.textContent = sec.name || '(untitled)';
+    setBpmDisplay(sec.bpm);
+
+    const sig = layoutSignature(sec);
+    if (sig !== lastLayoutSignature || lastActiveSectionIdx !== note.sectionIdx) {
+      buildReadoutLayout(sec);
+      lastLayoutSignature = sig;
+      lastActiveSectionIdx = note.sectionIdx;
+    }
+
+    if (note.kind === 'main') {
+      const dots = els.beatDots.querySelectorAll('.beat-dot');
+      dots.forEach((d, i) => d.classList.toggle('on', i === note.hitIndex));
+
+      const secondsPerBeat = 60 / sec.bpm;
+      pendulumDir *= -1;
+      els.pendulumArm.style.transitionDuration = secondsPerBeat.toFixed(3) + 's';
+      els.pendulumArm.style.transform = `rotate(${pendulumDir * 24}deg)`;
+    } else {
+      const row = els.polyDotsContainer.querySelector(`.poly-dot-row[data-layer-id="${note.layerId}"]`);
+      if (row) {
+        const dots = row.querySelectorAll('.poly-beat-dot');
+        dots.forEach((d, i) => d.classList.toggle('on', i === note.hitIndex));
+      }
+    }
+
+    document.querySelectorAll('.section-card').forEach((card, idx) => {
+      card.classList.toggle('active', idx === note.sectionIdx);
+    });
+  }
+
+  function startPlayback(fromSectionIdx) {
+    if (sections.length === 0) return;
+    ensureAudio();
+    playback.cur = { sectionIdx: fromSectionIdx, measureInSection: 0 };
+    playback.queue = [];
+    playback.displayed = null;
+    playback.nextBarTime = playback.audioCtx.currentTime + 0.05;
+    playback.isPlaying = true;
+    lastLayoutSignature = null;
+    lastActiveSectionIdx = -1;
+
+    els.playBtn.textContent = 'Pauza';
+    els.playBtn.classList.add('playing');
+    els.pendulumArm.classList.remove('idle');
+    startKeepAlive();
+    updateMediaSessionState(true);
+    renderSections(); // locks reorder/delete controls while playing
+
+    scheduler();
+    playback.timerId = setInterval(scheduler, playback.lookaheadMs);
+    playback.rafId = requestAnimationFrame(drawLoop);
+  }
+
+  function pausePlayback() {
+    const wasPlaying = playback.isPlaying;
+    playback.isPlaying = false;
+    if (playback.timerId) clearInterval(playback.timerId);
+    if (playback.rafId) cancelAnimationFrame(playback.rafId);
+    playback.timerId = null;
+    els.playBtn.textContent = 'Přehrát';
+    els.playBtn.classList.remove('playing');
+    els.pendulumArm.style.transform = '';
+    els.pendulumArm.classList.add('idle');
+    stopKeepAlive();
+    updateMediaSessionState(false);
+    if (wasPlaying) renderSections(); // unlocks reorder/delete controls
+  }
+
+  function finishPlayback() {
+    pausePlayback();
+    playback.displayed = null;
+    document.querySelectorAll('.beat-dot, .poly-beat-dot').forEach(d => d.classList.remove('on'));
+    els.sectionName.textContent = 'Hotovo';
+    document.querySelectorAll('.section-card').forEach(card => card.classList.remove('active'));
+  }
+
+  function stopPlayback() {
+    pausePlayback();
+    playback.queue = [];
+    playback.displayed = null;
+    document.querySelectorAll('.beat-dot, .poly-beat-dot').forEach(d => d.classList.remove('on'));
+    document.querySelectorAll('.section-card').forEach(card => card.classList.remove('active'));
+    const sec = sections[startSectionIdx] || sections[0];
+    if (sec) {
+      els.sectionName.textContent = 'Připraveno';
+      setBpmDisplay(sec.bpm);
+      lastLayoutSignature = null;
+      lastActiveSectionIdx = -1;
+      buildReadoutLayout(sec);
+    }
+  }
+
+  function restartFrom(idx) {
+    pausePlayback();
+    startPlayback(idx);
+  }
+
+  // ---------------------------------------------------------------
+  // Export / import
+  // ---------------------------------------------------------------
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function safeFilename(name) {
+    return (name || 'metronome')
+      .trim()
+      .replace(/[\\/:*?"<>|]/g, '') // strip characters that break filenames on common filesystems
+      .replace(/\s+/g, '-') || 'metronome';
+  }
+
+  function exportSongJson() {
+    const data = {
+      title: els.songTitle.value || 'Moje skladba',
+      loopSong: els.loopSong.checked,
+      mainSound: els.mainSound.value,
+      sections: sections.map(s => ({
+        name: s.name,
+        bpm: s.bpm,
+        beats: s.beats,
+        measures: s.measures,
+        polyLayers: s.polyLayers.map(l => ({ hits: l.hits, label: l.label, sound: l.sound || 'click' }))
+      }))
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    downloadBlob(blob, safeFilename(data.title) + '.json');
+  }
+
+  function handleImportFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        if (!data || !Array.isArray(data.sections)) throw new Error('bad shape');
+
+        sections = data.sections.map(s => ({
+          id: nextId++,
+          name: String(s.name || 'Sekce'),
+          bpm: clamp(Number(s.bpm) || 100, 20, 300),
+          beats: clamp(Number(s.beats) || 4, 1, 12),
+          measures: clamp(Number(s.measures) || 4, 1, 200),
+          polyLayers: Array.isArray(s.polyLayers) ? s.polyLayers.map(l => ({
+            id: nextLayerId++,
+            hits: clamp(Number(l.hits) || 3, 1, 16),
+            label: String(l.label || ''),
+            sound: SOUND_KITS[l.sound] ? l.sound : 'click'
+          })) : []
+        }));
+
+        els.songTitle.value = data.title || 'Moje skladba';
+        els.loopSong.checked = data.loopSong !== false;
+        els.mainSound.value = SOUND_KITS[data.mainSound] ? data.mainSound : 'click';
+        startSectionIdx = 0;
+        refreshSectionTemplates();
+        stopPlayback();
+        renderSections();
+      } catch (err) {
+        alert('Tento soubor se nepodařilo načíst — ujistěte se, že jde o skladbu exportovanou z této aplikace.');
+      }
+      els.importFile.value = '';
+    };
+    reader.readAsText(file);
+  }
+
+  function encodeWavMono(samples, sampleRate) {
+    const buffer = new ArrayBuffer(44 + samples.length * 2);
+    const view = new DataView(buffer);
+    function writeString(offset, str) {
+      for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+    }
+    writeString(0, 'RIFF');
+    view.setUint32(4, 36 + samples.length * 2, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeString(36, 'data');
+    view.setUint32(40, samples.length * 2, true);
+    let offset = 44;
+    for (let i = 0; i < samples.length; i++, offset += 2) {
+      const s = Math.max(-1, Math.min(1, samples[i]));
+      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    }
+    return new Blob([view], { type: 'audio/wav' });
+  }
+
+  async function exportClickTrackWav() {
+    if (sections.length === 0) return;
+    let total = 0;
+    sections.forEach(sec => { total += (60 / sec.bpm) * sec.beats * sec.measures; });
+    if (total <= 0) return;
+
+    const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!OfflineCtx) { alert('Váš prohlížeč nepodporuje offline vykreslování zvuku.'); return; }
+
+    els.exportWavBtn.disabled = true;
+    els.exportWavBtn.textContent = 'Vykresluji…';
+
+    try {
+      const sampleRate = 44100;
+      const offlineCtx = new OfflineCtx(1, Math.ceil((total + 0.3) * sampleRate), sampleRate);
+
+      let cursor = 0;
+      sections.forEach((sec, idx) => {
+        const barDuration = (60 / sec.bpm) * sec.beats;
+        for (let m = 0; m < sec.measures; m++) {
+          scheduleBarEvents(offlineCtx, offlineCtx.destination, idx, sec, cursor, barDuration, false, els.mainSound.value);
+          cursor += barDuration;
+        }
+      });
+
+      const rendered = await offlineCtx.startRendering();
+      const wavBlob = encodeWavMono(rendered.getChannelData(0), sampleRate);
+      downloadBlob(wavBlob, safeFilename(els.songTitle.value) + '.wav');
+    } finally {
+      els.exportWavBtn.disabled = false;
+      els.exportWavBtn.textContent = 'Exportovat zvukovou stopu';
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // Wiring
+  // ---------------------------------------------------------------
+  els.playBtn.addEventListener('click', () => {
+    if (playback.isPlaying) pausePlayback();
+    else startPlayback(playback.displayed ? playback.displayed.sectionIdx : startSectionIdx);
+  });
+
+  els.stopBtn.addEventListener('click', () => { startSectionIdx = 0; stopPlayback(); });
+
+  els.addBtn.addEventListener('click', () => {
+    sections.push({ id: nextId++, name: 'Nová sekce', bpm: 100, beats: 4, measures: 4, polyLayers: [] });
+    renderSections();
+  });
+
+  els.addLayerMain.addEventListener('click', () => {
+    const idx = getReadoutSectionIdx();
+    if (idx < 0) return;
+    const sec = sections[idx];
+    sec.polyLayers.push({ id: nextLayerId++, hits: 3, label: '', sound: 'click' });
+    saveSectionTemplate(sec);
+    refreshHeroLayoutFor(sec);
+    renderSections();
+  });
+
+  els.tapTempoMain.addEventListener('click', () => {
+    const idx = getReadoutSectionIdx();
+    if (idx < 0) return;
+    handleTapTempo(sections[idx].id);
+  });
+
+  attachHoldRepeat(els.bpmUp, (step) => adjustReadoutTempo(step));
+  attachHoldRepeat(els.bpmDown, (step) => adjustReadoutTempo(-step));
+
+  els.bpmNumber.addEventListener('wheel', e => {
+    if (getReadoutSectionIdx() < 0) return;
+    e.preventDefault();
+    adjustReadoutTempo((e.deltaY < 0 ? 1 : -1) * (e.shiftKey ? 5 : 1));
+  }, { passive: false });
+
+  els.bpmNumber.addEventListener('keydown', e => {
+    if (e.key === 'ArrowUp') { e.preventDefault(); adjustReadoutTempo(e.shiftKey ? 5 : 1); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); adjustReadoutTempo(e.shiftKey ? -5 : -1); }
+    else if (e.key === 'Enter') { e.preventDefault(); enterBpmEditMode(); }
+  });
+
+  // Drag up/down on the big number itself to scrub the tempo, like a knob.
+  // A plain click/tap (no movement) opens type-in editing instead — dragMoved
+  // is how we tell the two gestures apart once the browser's own 'click'
+  // event fires at the end of the pointer sequence.
+  let bpmDrag = null;
+  let dragMoved = false;
+  els.bpmNumber.addEventListener('pointerdown', e => {
+    const idx = getReadoutSectionIdx();
+    if (idx < 0) return;
+    bpmDrag = { startY: e.clientY, startBpm: sections[idx].bpm };
+    dragMoved = false;
+    els.bpmNumber.classList.add('dragging');
+    els.bpmNumber.setPointerCapture(e.pointerId);
+  });
+  els.bpmNumber.addEventListener('pointermove', e => {
+    if (!bpmDrag) return;
+    dragMoved = true;
+    const deltaBpm = Math.round((bpmDrag.startY - e.clientY) / 4); // ~4px per bpm, drag up = faster
+    setReadoutTempo(bpmDrag.startBpm + deltaBpm);
+  });
+  function endBpmDrag() {
+    bpmDrag = null;
+    els.bpmNumber.classList.remove('dragging');
+  }
+  els.bpmNumber.addEventListener('pointerup', endBpmDrag);
+  els.bpmNumber.addEventListener('pointercancel', endBpmDrag);
+
+  els.bpmNumber.addEventListener('click', () => {
+    if (!dragMoved) enterBpmEditMode();
+    dragMoved = false;
+  });
+
+  els.bpmNumberInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); els.bpmNumberInput.blur(); }
+    else if (e.key === 'Escape') { e.preventDefault(); skipBpmCommit = true; els.bpmNumberInput.blur(); }
+  });
+
+  els.bpmNumberInput.addEventListener('blur', () => {
+    if (skipBpmCommit) {
+      skipBpmCommit = false;
+    } else if (bpmEditSectionId != null) {
+      const sec = sections.find(s => s.id === bpmEditSectionId);
+      const parsed = parseInt(els.bpmNumberInput.value, 10);
+      if (sec && !Number.isNaN(parsed)) applyTempoToSection(sec, parsed);
+    }
+    exitBpmEditMode();
+  });
+
+  els.exportJsonBtn.addEventListener('click', exportSongJson);
+  els.exportWavBtn.addEventListener('click', exportClickTrackWav);
+  els.importBtn.addEventListener('click', () => els.importFile.click());
+  els.importFile.addEventListener('change', handleImportFile);
+
+  document.addEventListener('keydown', e => {
+    if (e.code === 'Space' && document.activeElement.tagName !== 'INPUT') {
+      e.preventDefault();
+      els.playBtn.click();
+    }
+  });
+
+  // Mobile browsers may suspend the AudioContext when the screen locks or
+  // the tab is backgrounded even with the keep-alive session running; catch
+  // up as soon as the page is visible/focused again rather than staying
+  // silently stuck.
+  function resumeAudioIfNeeded() {
+    if (playback.isPlaying && playback.audioCtx && playback.audioCtx.state === 'suspended') {
+      playback.audioCtx.resume();
+    }
+  }
+  document.addEventListener('visibilitychange', resumeAudioIfNeeded);
+  window.addEventListener('focus', resumeAudioIfNeeded);
+  window.addEventListener('pageshow', resumeAudioIfNeeded);
+
+  // ---------------------------------------------------------------
+  // Init
+  // ---------------------------------------------------------------
+  els.mainSound.innerHTML = soundOptionsHtml('click');
+  refreshSectionTemplates();
+  setupMediaSession();
+  renderSections();
+  if (sections.length) {
+    buildReadoutLayout(sections[0]);
+    setBpmDisplay(sections[0].bpm);
+  }
+
+  // Debug/test hook — not used by the UI itself. Lets automated tests (and
+  // manual debugging via the browser console) drive internal state directly.
+  window.__metronomeDebug = {
+    get sections() { return sections; },
+    set sections(v) { sections = v; },
+    get sectionTemplates() { return sectionTemplates; },
+    set sectionTemplates(v) { sectionTemplates = v; },
+    playback, els,
+    startPlayback, pausePlayback, stopPlayback, scheduler,
+    renderSections, buildReadoutLayout, handleImportFile,
+    exportClickTrackWav, exportSongJson,
+    getReadoutSectionIdx, setReadoutTempo, adjustReadoutTempo,
+    enterBpmEditMode, exitBpmEditMode, applyTempoToSection,
+    saveSectionTemplate, applySectionTemplateIfMatch, refreshSectionTemplates,
+    handleTapTempo,
+    buildKeepAliveAudio, startKeepAlive, stopKeepAlive, resumeAudioIfNeeded,
+  };
+})();
+</script>
+
+</body>
+</html>
