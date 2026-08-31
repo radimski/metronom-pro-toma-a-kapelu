@@ -1035,7 +1035,7 @@
     if (els.keepAliveAudio.src) return;
     const sampleRate = 8000;
     const samples = new Float32Array(sampleRate); // 1 second, looped
-    for (let i = 0; i < samples.length; i++) samples[i] = (Math.random() * 2 - 1) * 0.008; // near-inaudible, but not digital silence
+        // True silence — the keep-alive trick relies on the <audio> element actively looping, not on the signal being audible.
     els.keepAliveAudio.src = URL.createObjectURL(encodeWavMono(samples, sampleRate));
   }
 
