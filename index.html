@@ -338,7 +338,7 @@
       </div>
     </div>
     <input type="file" id="importFile" accept="application/json" style="display:none">
-    <audio id="keepAliveAudio" loop playsinline preload="auto" style="display:none"></audio>
+    <audio id="audioOutput" loop playsinline preload="auto" style="display:none"></audio>
 
     <div class="stage">
       <div class="pendulum-wrap">
@@ -497,7 +497,7 @@
     exportWavBtn: document.getElementById('exportWavBtn'),
     importBtn: document.getElementById('importBtn'),
     importFile: document.getElementById('importFile'),
-    keepAliveAudio: document.getElementById('keepAliveAudio'),
+    audioOutput: document.getElementById('audioOutput'),
   };
 
   function clamp(v, lo, hi) {
@@ -1011,52 +1011,35 @@
   // ---------------------------------------------------------------
   // Audio synthesis
   // ---------------------------------------------------------------
-  function ensureAudio() {
-    if (!playback.audioCtx) {
-      playback.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      playback.masterGain = playback.audioCtx.createGain();
-      playback.masterGain.gain.value = 0.9;
-      playback.masterGain.connect(playback.audioCtx.destination);
-    }
-    if (playback.audioCtx.state === 'suspended') playback.audioCtx.resume();
-  }
+function ensureAudio() {
+      if (!playback.audioCtx) {
+              playback.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+              playback.masterGain = playback.audioCtx.createGain();
+              playback.masterGain.gain.value = 0.9;
 
-  // ---------------------------------------------------------------
-  // Background / lock-screen playback
-  //
-  // Mobile browsers aggressively suspend a page's JS and Web Audio graph
-  // once the screen locks or the tab is backgrounded — a plain AudioContext
-  // alone will go silent. The mitigation browsers actually respect is a real
-  // <audio> element with an active playback session (the same mechanism
-  // music/podcast sites rely on): as long as it's playing, the OS treats the
-  // page as a media session and is far less likely to suspend it, and it
-  // also unlocks the lock-screen transport controls via the Media Session
-  // API. This is a best-effort improvement, not a guarantee — see the
-  // caveats called out where this is wired up below.
-  // ---------------------------------------------------------------
-  function buildKeepAliveAudio() {
-    if (els.keepAliveAudio.src) return;
-    const sampleRate = 8000;
-            // True silence. A low-frequency tone was tried here as a middle ground
-        // (in case iOS treats a genuinely silent stream as "not really playing"
-        // and revokes the background-audio exemption), but a tone that low is
-        // perceived as a distinct rhythmic pulse rather than a smooth inaudible
-        // tone — reported as sounding like a heartbeat, which is worse than the
-        // problem it was meant to solve. True silence is the only variant that's
-        // been measured (not just assumed) to be genuinely inaudible.
-        const samples = new Float32Array(sampleRate); // 1 second of silence, looped
-    els.keepAliveAudio.src = URL.createObjectURL(encodeWavMono(samples, sampleRate));
-  }
-
-  function startKeepAlive() {
-    buildKeepAliveAudio();
-    const p = els.keepAliveAudio.play();
-    if (p && p.catch) p.catch(() => {}); // autoplay can be rejected in edge cases; not fatal
-  }
-
-  function stopKeepAlive() {
-    els.keepAliveAudio.pause();
-  }
+              // Route the actual synthesized audio through a real <audio> element
+              // instead of straight to audioCtx.destination. Mobile OSes grant
+              // <audio> elements background-playback privileges that a raw
+              // AudioContext does not get on its own — confirmed directly: a silent
+              // <audio> loop kept playing through a locked screen while the
+              // scheduled clicks, going straight to audioCtx.destination, went
+              // silent the moment the screen locked (the whole context gets
+              // suspended, not just throttled). Sending the real output through the
+              // same element the OS already treats as legitimate media playback
+              // lets it survive the lock too, instead of needing a separate silent
+              // "keep-alive" track alongside it.
+              if (playback.audioCtx.createMediaStreamDestination && els.audioOutput) {
+                        const streamDest = playback.audioCtx.createMediaStreamDestination();
+                        playback.masterGain.connect(streamDest);
+                        els.audioOutput.srcObject = streamDest.stream;
+                        const p = els.audioOutput.play();
+                        if (p && p.catch) p.catch(() => {}); // autoplay can be rejected in edge cases; not fatal
+              } else {
+                        playback.masterGain.connect(playback.audioCtx.destination);
+              }
+      }
+      if (playback.audioCtx.state === 'suspended') playback.audioCtx.resume();
+}
 
   function setupMediaSession() {
     if (!('mediaSession' in navigator)) return;
@@ -1272,7 +1255,7 @@
     els.playBtn.textContent = 'Pauza';
     els.playBtn.classList.add('playing');
     els.pendulumArm.classList.remove('idle');
-    startKeepAlive();
+    
     updateMediaSessionState(true);
     renderSections(); // locks reorder/delete controls while playing
 
@@ -1291,7 +1274,7 @@
     els.playBtn.classList.remove('playing');
     els.pendulumArm.style.transform = '';
     els.pendulumArm.classList.add('idle');
-    stopKeepAlive();
+    
     updateMediaSessionState(false);
     if (wasPlaying) renderSections(); // unlocks reorder/delete controls
   }
@@ -1610,7 +1593,7 @@
     enterBpmEditMode, exitBpmEditMode, applyTempoToSection,
     saveSectionTemplate, applySectionTemplateIfMatch, refreshSectionTemplates,
     handleTapTempo,
-    buildKeepAliveAudio, startKeepAlive, stopKeepAlive, resumeAudioIfNeeded,
+        resumeAudioIfNeeded,
   };
 })();
 </script>
