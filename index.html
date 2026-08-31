@@ -451,12 +451,15 @@
   // reapplies those settings automatically instead of starting from scratch.
   let sectionTemplates = {};
 
-  const playback = {
+  const FOREGROUND_SCHEDULE_AHEAD = 0.12;
+    const BACKGROUND_SCHEDULE_AHEAD = 45;
+  
+    const playback = {
     isPlaying: false,
     audioCtx: null,
     masterGain: null,
     lookaheadMs: 25,
-    scheduleAheadTime: 0.12,
+        scheduleAheadTime: FOREGROUND_SCHEDULE_AHEAD,
     nextBarTime: 0,
     timerId: null,
     rafId: null,
@@ -1256,6 +1259,7 @@
     playback.displayed = null;
     playback.nextBarTime = playback.audioCtx.currentTime + 0.05;
     playback.isPlaying = true;
+        playback.scheduleAheadTime = document.hidden ? BACKGROUND_SCHEDULE_AHEAD : FOREGROUND_SCHEDULE_AHEAD;
     lastLayoutSignature = null;
     lastActiveSectionIdx = -1;
 
@@ -1558,15 +1562,17 @@
     }
   });
 
-  // Mobile browsers may suspend the AudioContext when the screen locks or
-  // the tab is backgrounded even with the keep-alive session running; catch
-  // up as soon as the page is visible/focused again rather than staying
-  // silently stuck.
-  function resumeAudioIfNeeded() {
-    if (playback.isPlaying && playback.audioCtx && playback.audioCtx.state === 'suspended') {
-      playback.audioCtx.resume();
+  // Widens the scheduling lookahead (and immediately front-loads a big
+    // buffer of audio) right before the tab backgrounds, since mobile browsers
+    // throttle timers heavily once locked — narrows it back down once visible
+    // again for responsive tempo changes. Also resumes a suspended AudioContext.
+    function resumeAudioIfNeeded() {
+          if (!playback.isPlaying) return;
+          const hidden = document.hidden;
+          playback.scheduleAheadTime = hidden ? BACKGROUND_SCHEDULE_AHEAD : FOREGROUND_SCHEDULE_AHEAD;
+          if (playback.audioCtx && playback.audioCtx.state === 'suspended') playback.audioCtx.resume();
+          if (hidden && playback.audioCtx) scheduler();
     }
-  }
   document.addEventListener('visibilitychange', resumeAudioIfNeeded);
   window.addEventListener('focus', resumeAudioIfNeeded);
   window.addEventListener('pageshow', resumeAudioIfNeeded);
