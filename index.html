@@ -1037,18 +1037,14 @@
   function buildKeepAliveAudio() {
     if (els.keepAliveAudio.src) return;
     const sampleRate = 8000;
-        // A very low-frequency, low-amplitude tone — not true digital silence.
-        // iOS has been observed to revoke a tab's background-audio exemption for
-        // streams it detects as carrying no real signal, so silence can risk
-        // getting treated as "not actually playing." A tone this low sidesteps
-        // that: most phone speakers barely reproduce it and human hearing rolls
-        // off sharply down here, so in practice it's inaudible.
-        const freq = 20;
-        const amplitude = 0.05;
-        const samples = new Float32Array(sampleRate); // 1 second, looped
-        for (let i = 0; i < samples.length; i++) {
-                samples[i] = Math.sin((2 * Math.PI * freq * i) / sampleRate) * amplitude;
-        }
+            // True silence. A low-frequency tone was tried here as a middle ground
+        // (in case iOS treats a genuinely silent stream as "not really playing"
+        // and revokes the background-audio exemption), but a tone that low is
+        // perceived as a distinct rhythmic pulse rather than a smooth inaudible
+        // tone — reported as sounding like a heartbeat, which is worse than the
+        // problem it was meant to solve. True silence is the only variant that's
+        // been measured (not just assumed) to be genuinely inaudible.
+        const samples = new Float32Array(sampleRate); // 1 second of silence, looped
     els.keepAliveAudio.src = URL.createObjectURL(encodeWavMono(samples, sampleRate));
   }
 
